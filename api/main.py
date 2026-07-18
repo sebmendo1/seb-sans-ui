@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import os
 import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, select
 
@@ -87,8 +89,7 @@ def migrate() -> None:
     command.upgrade(config, "head")
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
+def startup() -> None:
     (ROOT / "data" / "backups").mkdir(parents=True, exist_ok=True)
     (ROOT / "releases").mkdir(parents=True, exist_ok=True)
     font_store.ensure_layout()
@@ -98,16 +99,46 @@ async def lifespan(_app: FastAPI):
         pass
     migrate()
     seed()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    startup()
     yield
+
+
+def allowed_origins() -> list[str]:
+    configured = os.getenv("ALLOWED_ORIGINS", "").strip()
+    if configured:
+        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+
+def mount_frontend(app: FastAPI) -> None:
+    dist = ROOT / "dist"
+    if not dist.is_dir():
+        return
+    assets = dist / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets), name="frontend-assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa_fallback(path: str):
+        if path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        candidate = dist / path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(dist / "index.html")
 
 
 app = FastAPI(title="Seb Sans Legibility Survey", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -120,6 +151,7 @@ if (ROOT / "icons").is_dir():
     app.mount("/icons", StaticFiles(directory=ROOT / "icons"), name="icons")
 if (ROOT / "releases").is_dir():
     app.mount("/releases", StaticFiles(directory=ROOT / "releases"), name="releases")
+mount_frontend(app)
 
 
 @app.get("/api/health")

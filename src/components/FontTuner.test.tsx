@@ -24,6 +24,7 @@ describe('FontTuner', () => {
         defaultText="Readable"
         rating={4}
         onConfigChange={onConfigChange}
+        onResetSettings={vi.fn()}
         onTextChange={vi.fn()}
         onRatingChange={vi.fn()}
       />,
@@ -50,6 +51,7 @@ describe('FontTuner', () => {
         defaultText="Readable"
         rating={4}
         onConfigChange={vi.fn()}
+        onResetSettings={vi.fn()}
         onTextChange={onTextChange}
         onRatingChange={onRatingChange}
       />,

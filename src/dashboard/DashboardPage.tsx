@@ -10,6 +10,7 @@ import {
   YAxis,
 } from 'recharts'
 import { ApiError, api } from '../lib/api'
+import { apiUrl } from '../lib/apiBase'
 import type { ControlName, Experiment, FontConfig, Submission, Summary } from '../types'
 
 const CONTROL_LABELS: Record<string, string> = {
@@ -65,7 +66,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!authenticated) return
-    const events = new EventSource('/api/admin/events', { withCredentials: true })
+    const events = new EventSource(apiUrl('/api/admin/events'), { withCredentials: true })
     events.addEventListener('update', () => void loadData())
     return () => events.close()
   }, [authenticated, loadData])
@@ -178,9 +179,9 @@ export default function DashboardPage() {
         </div>
         <div className="dashboard-actions">
           <Link className="secondary-button" to="/survey">Open survey</Link>
-          <a className="secondary-button" href="/api/admin/export.csv">CSV</a>
-          <a className="secondary-button" href="/api/admin/export.json">JSON</a>
-          <a className="secondary-button" href="/api/admin/recommendations.json">Recommendations</a>
+          <a className="secondary-button" href={apiUrl('/api/admin/export.csv')}>CSV</a>
+          <a className="secondary-button" href={apiUrl('/api/admin/export.json')}>JSON</a>
+          <a className="secondary-button" href={apiUrl('/api/admin/recommendations.json')}>Recommendations</a>
           <button className="secondary-button" type="button" onClick={() => void backup()}>Back up</button>
         </div>
       </header>

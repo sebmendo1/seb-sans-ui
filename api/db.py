@@ -10,7 +10,11 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env.local")
 
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'data' / 'survey.sqlite3'}")
+default_db = ROOT / "data" / "survey.sqlite3"
+if os.getenv("VERCEL"):
+    default_db = Path("/tmp/seb-sans-survey.sqlite3")
+
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{default_db}")
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args, future=True)
 

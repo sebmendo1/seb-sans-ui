@@ -10,6 +10,7 @@ interface FontTunerProps {
   defaultText: string
   rating: number
   onConfigChange: (config: FontConfig, control: ControlName, value: number) => void
+  onResetSettings: (defaults: FontConfig) => void
   onTextChange: (text: string) => void
   onRatingChange: (rating: number) => void
 }
@@ -64,6 +65,7 @@ export function FontTuner({
   defaultText,
   rating,
   onConfigChange,
+  onResetSettings,
   onTextChange,
   onRatingChange,
 }: FontTunerProps) {
@@ -122,7 +124,7 @@ export function FontTuner({
         <button
           type="button"
           className="secondary-button reset-settings"
-          onClick={() => onConfigChange(defaults, 'weight', defaults.weight)}
+          onClick={() => onResetSettings(defaults)}
         >
           Reset all settings
         </button>

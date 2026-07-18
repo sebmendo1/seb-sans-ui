@@ -7,6 +7,7 @@ import type {
   SurveyState,
   TuningEvent,
 } from '../types'
+import { apiUrl } from './apiBase'
 
 export class ApiError extends Error {
   constructor(
@@ -19,7 +20,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     credentials: 'include',
     ...init,
     headers: {

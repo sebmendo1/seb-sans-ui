@@ -1,3 +1,5 @@
+import { apiUrl } from './apiBase'
+
 export type FontStatus = {
   sourcePath: string
   workingPath: string
@@ -82,7 +84,7 @@ export class StudioApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -148,5 +150,5 @@ export const studioApi = {
   exportStatus: (jobId: string) =>
     request<ExportStatus>(`/api/export/status/${jobId}`),
   workingFontUrl: (cacheBust: string) =>
-    `/api/font/working?cache=${encodeURIComponent(cacheBust)}`,
+    apiUrl(`/api/font/working?cache=${encodeURIComponent(cacheBust)}`),
 }

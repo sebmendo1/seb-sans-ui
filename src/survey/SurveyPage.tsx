@@ -173,6 +173,14 @@ export function SurveyPage() {
     })
   }
 
+  function resetConfig(role: Role, defaults: FontConfig) {
+    setState((current) => (current ? { ...current, [role]: defaults } : current))
+    const elapsed_ms = Date.now() - startedAtRef.current
+    for (const control of ['weight', 'opsz', 'tracking', 'leading', 'xheight'] as ControlName[]) {
+      eventsRef.current.push({ role, control, value: defaults[control], elapsed_ms })
+    }
+  }
+
   async function submit() {
     if (!credentials || !state) return
     if (!state.likes.trim() || !state.dislikes.trim()) {
@@ -270,6 +278,7 @@ export function SurveyPage() {
               defaultText={experiment.displaySample}
               rating={state.display_rating}
               onConfigChange={(config, control, value) => changeConfig('display', config, control, value)}
+              onResetSettings={(defaults) => resetConfig('display', defaults)}
               onTextChange={(display_text) => setState({ ...state, display_text })}
               onRatingChange={(display_rating) => setState({ ...state, display_rating })}
             />
@@ -289,6 +298,7 @@ export function SurveyPage() {
               defaultText={experiment.bodySample}
               rating={state.body_rating}
               onConfigChange={(config, control, value) => changeConfig('body', config, control, value)}
+              onResetSettings={(defaults) => resetConfig('body', defaults)}
               onTextChange={(body_text) => setState({ ...state, body_text })}
               onRatingChange={(body_rating) => setState({ ...state, body_rating })}
             />

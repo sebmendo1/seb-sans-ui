@@ -136,7 +136,7 @@ def submissions_payload(db: Session, experiment_id: int | None = None) -> list[d
                         "role": event.role,
                         "control": event.control,
                         "value": event.value,
-                        "elapsedMs": event.elapsed_ms,
+                        "elapsed_ms": event.elapsed_ms,
                     }
                     for event in session.tuning_events
                 ],

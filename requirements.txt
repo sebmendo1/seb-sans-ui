@@ -1,4 +1,6 @@
 fastapi
+python-dotenv
+mangum
 uvicorn[standard]
 sqlalchemy
 alembic
