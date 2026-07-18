@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fontTools.ttLib import TTFont
 
-from ..font_store import WORKING_PATH, ensure_working_copy
+from ..font_store import ensure_working_copy, working_path
 from . import outlines
 from .glyphs import load_working_font
 
@@ -35,12 +35,12 @@ MAX_UNDO = 32
 
 def _snapshot() -> bytes:
     ensure_working_copy()
-    return WORKING_PATH.read_bytes()
+    return working_path().read_bytes()
 
 
 def _restore_snapshot(data: bytes) -> None:
     ensure_working_copy()
-    WORKING_PATH.write_bytes(data)
+    working_path().write_bytes(data)
 
 
 def _push_undo() -> None:

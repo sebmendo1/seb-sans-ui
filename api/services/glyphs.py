@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from fontTools.ttLib import TTFont
 
-from ..font_store import WORKING_PATH, ensure_working_copy
+from ..font_store import ensure_working_copy, working_path
 
 GROUPS = [
     "caps",
@@ -127,7 +127,7 @@ def _classify_glyph(name: str, codepoint: int | None) -> str:
 
 def load_working_font() -> TTFont:
     ensure_working_copy()
-    return TTFont(WORKING_PATH)
+    return TTFont(working_path())
 
 
 def list_glyphs() -> list[GlyphEntry]:

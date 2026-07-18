@@ -8,10 +8,11 @@ import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..font_store import ROOT, WORKING_PATH, ensure_working_copy
+from ..font_store import ROOT, ensure_working_copy, working_path
 from ..pipeline.loader import load_pipeline_module, pipeline_status
+from ..runtime import releases_dir
 
-RELEASES_DIR = ROOT / "releases"
+RELEASES_DIR = releases_dir()
 ICONS_DIR = ROOT / "icons"
 CHECKLIST = [
     {
@@ -124,7 +125,7 @@ def _build_release_folder(job: ExportJob, export_dir: Path) -> list[Path]:
     icons_dir.mkdir(parents=True, exist_ok=True)
 
     ensure_working_copy()
-    working_copy = WORKING_PATH
+    working_copy = working_path()
 
     patch_module = load_pipeline_module("patch_gsub")
     if patch_module is not None:

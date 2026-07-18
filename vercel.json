@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
-  "installCommand": "npm install",
+  "installCommand": "npm install && pip install -r requirements.txt",
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
@@ -12,7 +12,8 @@
   ],
   "functions": {
     "api/index.py": {
-      "maxDuration": 30
+      "maxDuration": 30,
+      "includeFiles": "fonts/**,migrations/**,alembic.ini,build_sebsans.py,letterform_pass.py,patch_gsub.py"
     }
   }
 }

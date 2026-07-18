@@ -91,8 +91,18 @@ export function SurveyPage() {
         }
       } catch {
         localStorage.removeItem(STORAGE_KEY)
-        const config = await api.getConfig()
-        if (active) setExperiment(config)
+        try {
+          const config = await api.getConfig()
+          if (active) setExperiment(config)
+        } catch (requestError) {
+          if (active) {
+            setError(
+              requestError instanceof ApiError
+                ? requestError.message
+                : 'Could not load the survey.',
+            )
+          }
+        }
       } finally {
         if (active) setLoading(false)
       }

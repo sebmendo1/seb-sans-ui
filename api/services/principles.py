@@ -4,7 +4,7 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
 
-from ..font_store import SOURCE_PATH, WORKING_PATH, ensure_working_copy
+from ..font_store import ensure_working_copy, source_path
 from .glyphs import load_working_font, total_glyph_count
 from .outlines import _draw_glyph, _instantiate_font
 
@@ -42,9 +42,10 @@ def _advance(font: TTFont, glyph_name: str) -> float:
 
 
 def _published_baseline_font() -> TTFont | None:
-    if not SOURCE_PATH.is_file():
+    source = source_path()
+    if not source.is_file():
         return None
-    return TTFont(SOURCE_PATH)
+    return TTFont(source)
 
 
 def get_principle_checks(glyph: str | None = None, batch_count: int | None = None) -> dict:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,6 +16,7 @@ from .db import SessionLocal, engine
 from .models import Experiment, FontAsset
 from . import font_store
 from .routers import admin, studio, survey
+from .runtime import allowed_origins as cors_origins, configure_serverless, releases_dir
 
 ROOT = Path(__file__).resolve().parents[1]
 FONT_SHA = "7a9ee8556c97076547457fb800662fa92611e038299a67420df0092053525525"
@@ -90,12 +90,11 @@ def migrate() -> None:
 
 
 def startup() -> None:
-    (ROOT / "data" / "backups").mkdir(parents=True, exist_ok=True)
-    (ROOT / "releases").mkdir(parents=True, exist_ok=True)
-    font_store.ensure_layout()
+    configure_serverless()
     try:
+        font_store.ensure_layout()
         font_store.ensure_working_copy()
-    except font_store.FontStoreError:
+    except (font_store.FontStoreError, OSError, PermissionError):
         pass
     migrate()
     seed()
@@ -105,16 +104,6 @@ def startup() -> None:
 async def lifespan(_app: FastAPI):
     startup()
     yield
-
-
-def allowed_origins() -> list[str]:
-    configured = os.getenv("ALLOWED_ORIGINS", "").strip()
-    if configured:
-        return [origin.strip() for origin in configured.split(",") if origin.strip()]
-    return [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
 
 
 def mount_frontend(app: FastAPI) -> None:
@@ -138,7 +127,7 @@ def mount_frontend(app: FastAPI) -> None:
 app = FastAPI(title="Seb Sans Legibility Survey", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins(),
+    allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -149,9 +138,8 @@ app.include_router(studio.router)
 app.mount("/fonts", StaticFiles(directory=ROOT / "fonts"), name="fonts")
 if (ROOT / "icons").is_dir():
     app.mount("/icons", StaticFiles(directory=ROOT / "icons"), name="icons")
-if (ROOT / "releases").is_dir():
-    app.mount("/releases", StaticFiles(directory=ROOT / "releases"), name="releases")
-mount_frontend(app)
+releases_path = releases_dir()
+app.mount("/releases", StaticFiles(directory=releases_path), name="releases")
 
 
 @app.get("/api/health")
@@ -164,3 +152,6 @@ def health():
             "ots": bool(shutil.which("ots-sanitize")),
         },
     }
+
+
+mount_frontend(app)

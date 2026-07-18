@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..auth import ADMIN_PIN, COOKIE_NAME, create_admin_token, require_admin
 from ..db import DATABASE_URL, get_db
 from ..models import Experiment
+from ..runtime import backup_dir
 from ..schemas import AdminLogin, ExperimentCreate
 from ..services.analytics import build_summary, experiment_to_dict, submissions_payload
 from ..services.events import broker
@@ -173,9 +174,12 @@ def backup():
     source_path = Path(DATABASE_URL.removeprefix("sqlite:///"))
     if not source_path.is_absolute():
         source_path = ROOT / source_path
-    backup_dir = ROOT / "data" / "backups"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    destination = backup_dir / f"survey-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite3"
+    backup_dir_path = backup_dir()
+    destination = backup_dir_path / f"survey-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite3"
     with sqlite3.connect(source_path) as source, sqlite3.connect(destination) as target:
         source.backup(target)
-    return {"ok": True, "path": str(destination.relative_to(ROOT))}
+    try:
+        path = str(destination.relative_to(ROOT))
+    except ValueError:
+        path = str(destination)
+    return {"ok": True, "path": path}

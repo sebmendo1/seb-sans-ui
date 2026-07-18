@@ -65,7 +65,7 @@ def font_working():
     try:
         font_store.ensure_working_copy()
         return FileResponse(
-            font_store.WORKING_PATH,
+            font_store.working_path(),
             media_type="application/font-sfnt",
             filename="SebSansVar-working.ttf",
         )
@@ -77,7 +77,7 @@ def font_working():
 def font_source():
     try:
         return FileResponse(
-            font_store.SOURCE_PATH,
+            font_store.source_path(),
             media_type="application/font-sfnt",
             filename="SebSansVar-source.ttf",
         )

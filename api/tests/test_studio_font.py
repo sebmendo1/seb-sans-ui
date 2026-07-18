@@ -28,12 +28,6 @@ def font_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     shutil.copy2(source, working_dir / "SebSansVar.ttf")
 
     monkeypatch.setenv("STUDIO_FONT_DIR", str(font_dir))
-    monkeypatch.setattr("api.font_store.FONT_DIR", font_dir)
-    monkeypatch.setattr("api.font_store.SOURCE_PATH", source)
-    monkeypatch.setattr("api.font_store.WORKING_DIR", working_dir)
-    monkeypatch.setattr("api.font_store.WORKING_PATH", working_dir / "SebSansVar.ttf")
-    monkeypatch.setattr("api.font_store.HISTORY_DIR", history_dir)
-    monkeypatch.setattr("api.font_store.BASELINE_DIR", font_dir / "_baseline")
     return {
         "font_dir": font_dir,
         "source": source,

@@ -10,7 +10,7 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
 
-from ..font_store import BASELINE_DIR, WORKING_PATH, ensure_working_copy
+from ..font_store import baseline_dir, ensure_working_copy, working_path
 from .glyphs import load_working_font
 
 
@@ -159,7 +159,7 @@ def _apply_metrics(font: TTFont, glyph_name: str, payload: dict) -> None:
 
 
 def _copy_glyph_from_baseline(font: TTFont, glyph_name: str) -> None:
-    baseline_files = sorted(BASELINE_DIR.glob("Inter*.ttf"))
+    baseline_files = sorted(baseline_dir().glob("Inter*.ttf"))
     if not baseline_files:
         raise FileNotFoundError("Inter baseline not cached")
     baseline = TTFont(baseline_files[0])
@@ -174,7 +174,7 @@ def _copy_glyph_from_baseline(font: TTFont, glyph_name: str) -> None:
 
 def save_font(font: TTFont) -> None:
     ensure_working_copy()
-    font.save(WORKING_PATH)
+    font.save(working_path())
 
 
 def contours_from_glyph(font: TTFont, glyph_name: str) -> list[dict]:

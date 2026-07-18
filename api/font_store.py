@@ -8,12 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FONT_DIR = Path(os.environ.get("STUDIO_FONT_DIR", ROOT / "fonts"))
-SOURCE_PATH = FONT_DIR / "SebSansVar.ttf"
-WORKING_DIR = FONT_DIR / "_working"
-WORKING_PATH = WORKING_DIR / "SebSansVar.ttf"
-HISTORY_DIR = FONT_DIR / "_history"
-BASELINE_DIR = FONT_DIR / "_baseline"
+BUNDLED_SOURCE = ROOT / "fonts" / "SebSansVar.ttf"
 
 
 class FontStoreError(Exception):
@@ -35,12 +30,36 @@ class FontStatus:
     history_count: int
 
 
+def font_dir() -> Path:
+    return Path(os.environ.get("STUDIO_FONT_DIR", str(ROOT / "fonts")))
+
+
+def source_path() -> Path:
+    return font_dir() / "SebSansVar.ttf"
+
+
+def working_dir() -> Path:
+    return font_dir() / "_working"
+
+
+def working_path() -> Path:
+    return working_dir() / "SebSansVar.ttf"
+
+
+def history_dir() -> Path:
+    return font_dir() / "_history"
+
+
+def baseline_dir() -> Path:
+    return font_dir() / "_baseline"
+
+
 def _display_path(path: Path) -> str:
     try:
         return str(path.relative_to(ROOT))
     except ValueError:
         try:
-            return str(path.relative_to(FONT_DIR.parent))
+            return str(path.relative_to(font_dir().parent))
         except ValueError:
             return str(path)
 
@@ -64,46 +83,56 @@ def _atomic_replace(src: Path, dest: Path) -> None:
 
 
 def ensure_layout() -> None:
-    WORKING_DIR.mkdir(parents=True, exist_ok=True)
-    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-    BASELINE_DIR.mkdir(parents=True, exist_ok=True)
+    working_dir().mkdir(parents=True, exist_ok=True)
+    history_dir().mkdir(parents=True, exist_ok=True)
+    baseline_dir().mkdir(parents=True, exist_ok=True)
 
 
 def ensure_source_exists() -> None:
-    if not SOURCE_PATH.is_file():
-        raise FontStoreError(
-            "SOURCE_FONT_MISSING",
-            f"Source font not found at {SOURCE_PATH}",
-        )
+    source = source_path()
+    if source.is_file():
+        return
+    if BUNDLED_SOURCE.is_file() and source != BUNDLED_SOURCE:
+        source.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(BUNDLED_SOURCE, source)
+        return
+    raise FontStoreError(
+        "SOURCE_FONT_MISSING",
+        f"Source font not found at {source}",
+    )
 
 
 def ensure_working_copy() -> None:
     ensure_layout()
     ensure_source_exists()
-    if not WORKING_PATH.is_file():
-        shutil.copy2(SOURCE_PATH, WORKING_PATH)
+    working = working_path()
+    source = source_path()
+    if not working.is_file():
+        shutil.copy2(source, working)
 
 
 def read_source_bytes() -> bytes:
     ensure_source_exists()
-    return SOURCE_PATH.read_bytes()
+    return source_path().read_bytes()
 
 
 def read_working_bytes() -> bytes:
     ensure_working_copy()
-    return WORKING_PATH.read_bytes()
+    return working_path().read_bytes()
 
 
 def status() -> FontStatus:
     ensure_working_copy()
-    source_sha = _sha256(SOURCE_PATH)
-    working_sha = _sha256(WORKING_PATH)
-    history_count = len(list(HISTORY_DIR.glob("SebSansVar-*.ttf")))
+    source = source_path()
+    working = working_path()
+    source_sha = _sha256(source)
+    working_sha = _sha256(working)
+    history_count = len(list(history_dir().glob("SebSansVar-*.ttf")))
     return FontStatus(
-        source_path=_display_path(SOURCE_PATH),
-        working_path=_display_path(WORKING_PATH),
-        source_bytes=SOURCE_PATH.stat().st_size,
-        working_bytes=WORKING_PATH.stat().st_size,
+        source_path=_display_path(source),
+        working_path=_display_path(working),
+        source_bytes=source.stat().st_size,
+        working_bytes=working.stat().st_size,
         source_sha256=source_sha,
         working_sha256=working_sha,
         working_matches_source=source_sha == working_sha,
@@ -113,14 +142,16 @@ def status() -> FontStatus:
 
 def save_working_to_source() -> str:
     ensure_working_copy()
+    source = source_path()
+    working = working_path()
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    history_path = HISTORY_DIR / f"SebSansVar-{timestamp}.ttf"
-    shutil.copy2(SOURCE_PATH, history_path)
-    _atomic_replace(WORKING_PATH, SOURCE_PATH)
+    history_path = history_dir() / f"SebSansVar-{timestamp}.ttf"
+    shutil.copy2(source, history_path)
+    _atomic_replace(working, source)
     return _display_path(history_path)
 
 
 def discard_working() -> None:
     ensure_source_exists()
     ensure_layout()
-    shutil.copy2(SOURCE_PATH, WORKING_PATH)
+    shutil.copy2(source_path(), working_path())
