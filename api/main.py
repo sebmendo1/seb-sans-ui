@@ -135,11 +135,14 @@ app.add_middleware(
 app.include_router(survey.router)
 app.include_router(admin.router)
 app.include_router(studio.router)
-app.mount("/fonts", StaticFiles(directory=ROOT / "fonts"), name="fonts")
+fonts_path = ROOT / "fonts"
+if fonts_path.is_dir():
+    app.mount("/fonts", StaticFiles(directory=fonts_path), name="fonts")
 if (ROOT / "icons").is_dir():
     app.mount("/icons", StaticFiles(directory=ROOT / "icons"), name="icons")
 releases_path = releases_dir()
-app.mount("/releases", StaticFiles(directory=releases_path), name="releases")
+if releases_path.is_dir():
+    app.mount("/releases", StaticFiles(directory=releases_path), name="releases")
 
 
 @app.get("/api/health")

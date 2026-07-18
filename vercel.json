@@ -13,7 +13,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": 30,
-      "includeFiles": "fonts/**,migrations/**,alembic.ini,build_sebsans.py,letterform_pass.py,patch_gsub.py"
+      "includeFiles": "{fonts/**,migrations/**,alembic.ini,icons/**}"
     }
   }
 }
