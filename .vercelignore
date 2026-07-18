@@ -1,0 +1,9 @@
+.venv/
+api/
+data/
+fonts/_working/
+fonts/_history/
+migrations/
+*.sqlite3
+playwright-report/
+test-results/

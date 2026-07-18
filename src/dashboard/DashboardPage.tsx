@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CartesianGrid,
@@ -9,9 +9,20 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { ApiError, api } from '../lib/api'
-import { apiUrl } from '../lib/apiBase'
-import type { ControlName, Experiment, FontConfig, Submission, Summary } from '../types'
+import { ACTIVE_EXPERIMENT } from '../config/experiment'
+import { buildSummary } from '../lib/analytics'
+import { isAdminAuthenticated, loginAdmin, logoutAdmin } from '../lib/adminAuth'
+import {
+  downloadCsv,
+  downloadJson,
+  loadSeedSubmissions,
+  loadStoredSubmissions,
+  mergeSubmissionExports,
+  parseSubmissionExport,
+  seedStoredSubmissions,
+  submissionExportsToRows,
+} from '../lib/surveyStorage'
+import type { FontConfig, Submission, SubmissionExport, Summary } from '../types'
 
 const CONTROL_LABELS: Record<string, string> = {
   weight: 'Weight',
@@ -22,118 +33,54 @@ const CONTROL_LABELS: Record<string, string> = {
 }
 
 export default function DashboardPage() {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [authenticated, setAuthenticated] = useState(isAdminAuthenticated())
   const [pin, setPin] = useState('')
-  const [summary, setSummary] = useState<Summary | null>(null)
-  const [submissions, setSubmissions] = useState<Submission[]>([])
-  const [experiments, setExperiments] = useState<Experiment[]>([])
-  const [experimentFilter, setExperimentFilter] = useState<number | undefined>()
+  const [imports, setImports] = useState<SubmissionExport[]>(() => [
+    ...loadStoredSubmissions(),
+  ])
+  const [experimentFilter, setExperimentFilter] = useState<string>('')
   const [search, setSearch] = useState('')
   const [copyFilter, setCopyFilter] = useState<'all' | 'original' | 'edited'>('all')
   const [deviceFilter, setDeviceFilter] = useState<'all' | 'mobile' | 'desktop'>('all')
   const [dateFilter, setDateFilter] = useState<'all' | '7' | '30'>('all')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-
-  const loadData = useCallback(async () => {
-    try {
-      const [summaryData, submissionData, experimentData] = await Promise.all([
-        api.summary(experimentFilter),
-        api.submissions(experimentFilter),
-        api.experiments(),
-      ])
-      setSummary(summaryData)
-      setSubmissions(submissionData.items)
-      setExperiments(experimentData.items)
-      setError('')
-    } catch (requestError) {
-      if (requestError instanceof ApiError && requestError.status === 401) {
-        setAuthenticated(false)
-      } else {
-        setError(requestError instanceof Error ? requestError.message : 'Dashboard could not load.')
-      }
-    }
-  }, [experimentFilter])
+  const [seedLoaded, setSeedLoaded] = useState(false)
 
   useEffect(() => {
-    api.adminMe()
-      .then(() => {
-        setAuthenticated(true)
-        void loadData()
-      })
-      .catch(() => setAuthenticated(false))
-  }, [loadData])
-
-  useEffect(() => {
-    if (!authenticated) return
-    const events = new EventSource(apiUrl('/api/admin/events'), { withCredentials: true })
-    events.addEventListener('update', () => void loadData())
-    return () => events.close()
-  }, [authenticated, loadData])
-
-  async function login(event: React.FormEvent) {
-    event.preventDefault()
-    try {
-      await api.adminLogin(pin)
-      setAuthenticated(true)
-      setError('')
-      await loadData()
-    } catch {
-      setError('That PIN is not correct.')
-    }
-  }
-
-  async function createFromMedians() {
-    if (!summary?.activeExperiment) return
-    const source = summary.activeExperiment
-    const derive = (role: 'display' | 'body', defaults: FontConfig): FontConfig => {
-      const next = { ...defaults }
-      for (const control of Object.keys(CONTROL_LABELS) as ControlName[]) {
-        const value = summary.distributions[role][control]?.median
-        if (value !== null && value !== undefined) next[control] = value
+    if (!authenticated || seedLoaded) return
+    void loadSeedSubmissions().then((seed) => {
+      if (!seed.length) {
+        setSeedLoaded(true)
+        return
       }
-      return next
-    }
-    try {
-      const created = await api.createExperiment({
-        display_defaults: derive('display', source.displayDefaults),
-        body_defaults: derive('body', source.bodyDefaults),
-        display_sample: source.displaySample,
-        body_sample: source.bodySample,
-      })
-      setNotice(`${created.version} created as a draft. Review it below before activation.`)
-      await loadData()
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not create experiment.')
-    }
-  }
+      const stored = seedStoredSubmissions(seed)
+      setImports((current) => mergeSubmissionExports(current, seed))
+      setNotice(
+        stored.length === seed.length
+          ? `Loaded ${seed.length} archived submission${seed.length === 1 ? '' : 's'} from production.`
+          : `Merged ${seed.length} archived submission${seed.length === 1 ? '' : 's'} with this browser.`,
+      )
+      setSeedLoaded(true)
+    })
+  }, [authenticated, seedLoaded])
 
-  async function activate(id: number) {
-    try {
-      const activated = await api.activateExperiment(id)
-      setNotice(`${activated.version} is active for future participants.`)
-      await loadData()
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not activate experiment.')
-    }
-  }
-
-  async function backup() {
-    try {
-      const result = await api.backup()
-      setNotice(`Backup saved to ${result.path}`)
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Backup failed.')
-    }
-  }
+  const submissions = useMemo(
+    () => submissionExportsToRows(imports),
+    [imports],
+  )
 
   const filteredSubmissions = useMemo(() => {
+    const scoped = experimentFilter
+      ? submissions.filter((item) => item.experimentVersion === experimentFilter)
+      : submissions
     const query = search.trim().toLowerCase()
     const cutoff =
       dateFilter === 'all'
         ? null
         : Date.now() - Number(dateFilter) * 24 * 60 * 60 * 1000
-    return submissions.filter((item) => {
+    return scoped.filter((item) => {
       const edited = item.display.sampleEdited || item.body.sampleEdited
       const isMobile = (item.viewport.width ?? 1000) < 700
       if (copyFilter === 'edited' && !edited) return false
@@ -149,15 +96,100 @@ export default function DashboardPage() {
         item.feedback.feelings,
       ].some((value) => value.toLowerCase().includes(query))
     })
-  }, [copyFilter, dateFilter, deviceFilter, search, submissions])
+  }, [copyFilter, dateFilter, deviceFilter, experimentFilter, search, submissions])
 
-  if (authenticated === null) return <main className="centered-page">Opening dashboard…</main>
+  const summary = useMemo<Summary | null>(() => {
+    if (!submissions.length) return null
+    return buildSummary(
+      experimentFilter
+        ? submissions.filter((item) => item.experimentVersion === experimentFilter)
+        : submissions,
+    )
+  }, [experimentFilter, submissions])
+
+  const experimentVersions = useMemo(
+    () => [...new Set(submissions.map((item) => item.experimentVersion))],
+    [submissions],
+  )
+
+  function handleLogin(event: React.FormEvent) {
+    event.preventDefault()
+    if (loginAdmin(pin)) {
+      setAuthenticated(true)
+      setError('')
+      return
+    }
+    setError('That PIN is not correct.')
+  }
+
+  function handleImportFiles(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files
+    if (!files?.length) return
+    void Promise.all(
+      [...files].map(async (file) => {
+        const text = await file.text()
+        return parseSubmissionExport(JSON.parse(text))
+      }),
+    )
+      .then((parsed) => {
+        const valid = parsed.filter((item): item is SubmissionExport => item !== null)
+        if (!valid.length) {
+          setError('No valid submission JSON files were found.')
+          return
+        }
+        setImports((current) => mergeSubmissionExports(current, valid))
+        seedStoredSubmissions(valid)
+        setNotice(`Imported ${valid.length} submission file${valid.length === 1 ? '' : 's'}.`)
+        setError('')
+      })
+      .catch(() => setError('Could not read one or more JSON files.'))
+      .finally(() => {
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      })
+  }
+
+  function loadBrowserSubmissions() {
+    const stored = loadStoredSubmissions()
+    if (!stored.length) {
+      setNotice('No completed submissions saved in this browser yet.')
+      return
+    }
+    setImports((current) => mergeSubmissionExports(current, stored))
+    setNotice(`Loaded ${stored.length} submission${stored.length === 1 ? '' : 's'} from this browser.`)
+  }
+
+  function exportMergedJson() {
+    downloadJson('seb-sans-submissions.json', imports)
+  }
+
+  function exportMergedCsv() {
+    downloadCsv('seb-sans-submissions.csv', filteredSubmissions)
+  }
+
+  function copyRecommendedDefaults() {
+    if (!summary) return
+    const next = {
+      displayDefaults: { ...ACTIVE_EXPERIMENT.displayDefaults },
+      bodyDefaults: { ...ACTIVE_EXPERIMENT.bodyDefaults },
+    }
+    for (const role of ['display', 'body'] as const) {
+      for (const control of ['weight', 'opsz', 'tracking', 'leading', 'xheight'] as const) {
+        const value = summary.distributions[role][control]?.median
+        if (value !== null && value !== undefined) {
+          next[`${role}Defaults`][control] = value
+        }
+      }
+    }
+    void navigator.clipboard.writeText(JSON.stringify(next, null, 2))
+    setNotice('Median-based defaults copied to clipboard. Paste into src/config/experiment.ts to start a new test.')
+  }
+
   if (!authenticated) {
     return (
       <main className="centered-page admin-login">
         <p className="eyebrow">Research access</p>
         <h1>Seb Sans dashboard</h1>
-        <form onSubmit={(event) => void login(event)}>
+        <form onSubmit={handleLogin}>
           <label>
             Admin PIN
             <input value={pin} onChange={(event) => setPin(event.target.value)} type="password" autoFocus />
@@ -174,28 +206,51 @@ export default function DashboardPage() {
     <main className="dashboard-page">
       <header className="dashboard-header">
         <div>
-          <p className="eyebrow">Live legibility research</p>
+          <p className="eyebrow">Legibility research</p>
           <h1>Seb Sans dashboard</h1>
         </div>
         <div className="dashboard-actions">
           <Link className="secondary-button" to="/survey">Open survey</Link>
-          <a className="secondary-button" href={apiUrl('/api/admin/export.csv')}>CSV</a>
-          <a className="secondary-button" href={apiUrl('/api/admin/export.json')}>JSON</a>
-          <a className="secondary-button" href={apiUrl('/api/admin/recommendations.json')}>Recommendations</a>
-          <button className="secondary-button" type="button" onClick={() => void backup()}>Back up</button>
+          <button className="secondary-button" type="button" onClick={() => fileInputRef.current?.click()}>
+            Import JSON
+          </button>
+          <button className="secondary-button" type="button" onClick={loadBrowserSubmissions}>
+            Load this browser
+          </button>
+          <button className="secondary-button" type="button" onClick={exportMergedJson} disabled={!imports.length}>
+            Export JSON
+          </button>
+          <button className="secondary-button" type="button" onClick={exportMergedCsv} disabled={!filteredSubmissions.length}>
+            Export CSV
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => {
+              logoutAdmin()
+              setAuthenticated(false)
+            }}
+          >
+            Sign out
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            multiple
+            hidden
+            onChange={handleImportFiles}
+          />
         </div>
       </header>
 
       <div className="dashboard-filter">
         <label>
           Experiment
-          <select
-            value={experimentFilter ?? ''}
-            onChange={(event) => setExperimentFilter(event.target.value ? Number(event.target.value) : undefined)}
-          >
+          <select value={experimentFilter} onChange={(event) => setExperimentFilter(event.target.value)}>
             <option value="">All experiments</option>
-            {experiments.map((experiment) => (
-              <option value={experiment.id} key={experiment.id}>{experiment.version} · {experiment.status}</option>
+            {experimentVersions.map((version) => (
+              <option value={version} key={version}>{version}</option>
             ))}
           </select>
         </label>
@@ -223,17 +278,25 @@ export default function DashboardPage() {
             <option value="30">Last 30 days</option>
           </select>
         </label>
-        <span className="live-indicator"><i /> Live</span>
+        <span className="live-indicator"><i /> {imports.length} imported</span>
       </div>
 
       {error ? <div className="dashboard-alert error" role="alert">{error}</div> : null}
       {notice ? <div className="dashboard-alert">{notice}</div> : null}
 
+      {!imports.length ? (
+        <section className="dashboard-section">
+          <p className="empty-state">
+            Import submission JSON files downloaded from the survey, load this browser, or review archived production responses loaded automatically on sign-in.
+          </p>
+        </section>
+      ) : null}
+
       {summary ? (
         <>
           <section className="metric-grid" aria-label="Survey metrics">
             <Metric label="Completed" value={summary.completed} />
-            <Metric label="Active now" value={summary.activeSessions} />
+            <Metric label="Imported" value={imports.length} />
             <Metric label="Completion" value={`${Math.round(summary.completionRate * 100)}%`} />
             <Metric
               label="Median time"
@@ -255,10 +318,10 @@ export default function DashboardPage() {
                 className="primary-button"
                 type="button"
                 disabled={!summary.recommendationsReady}
-                onClick={() => void createFromMedians()}
+                onClick={copyRecommendedDefaults}
               >
                 {summary.recommendationsReady
-                  ? 'Create next test from medians'
+                  ? 'Copy medians for next test'
                   : `Needs ${summary.recommendationMinimum} responses`}
               </button>
             </div>
@@ -277,7 +340,7 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <Relationships submissions={submissions} />
+          <Relationships submissions={filteredSubmissions} />
         </>
       ) : null}
 
@@ -328,24 +391,18 @@ export default function DashboardPage() {
 
       <section className="dashboard-section">
         <div className="section-heading">
-          <div><p className="eyebrow">Experiment versions</p><h2>Future sessions only</h2></div>
+          <div><p className="eyebrow">Experiment config</p><h2>Static test definition</h2></div>
         </div>
         <div className="experiment-list">
-          {experiments.map((experiment) => (
-            <article key={experiment.id}>
-              <div>
-                <strong>{experiment.version}</strong>
-                <span className={`status ${experiment.status}`}>{experiment.status}</span>
-              </div>
-              <p>Display {formatConfig(experiment.displayDefaults)}</p>
-              <p>Body {formatConfig(experiment.bodyDefaults)}</p>
-              {experiment.status !== 'active' ? (
-                <button className="secondary-button" type="button" onClick={() => void activate(experiment.id)}>
-                  Activate for new sessions
-                </button>
-              ) : null}
-            </article>
-          ))}
+          <article>
+            <div>
+              <strong>{ACTIVE_EXPERIMENT.version}</strong>
+              <span className="status active">{ACTIVE_EXPERIMENT.status}</span>
+            </div>
+            <p>Display {formatConfig(ACTIVE_EXPERIMENT.displayDefaults)}</p>
+            <p>Body {formatConfig(ACTIVE_EXPERIMENT.bodyDefaults)}</p>
+            <p className="muted">Edit `src/config/experiment.ts` and redeploy to change defaults for new participants.</p>
+          </article>
         </div>
       </section>
     </main>

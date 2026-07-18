@@ -8,8 +8,9 @@
     "dev:web": "vite --host 0.0.0.0",
     "dev:api": ".venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8787 --reload --no-access-log",
     "build": "tsc -b && vite build",
+    "seed:pull": "python3 scripts/pull_submissions.py",
     "start": "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8787}",
-    "preview": "npm run build && npm run start",
+    "preview": "npm run build && vite preview --host 0.0.0.0 --port 4173",
     "test": "vitest run",
     "test:api": "PYTHONPATH=. .venv/bin/pytest api/tests -q",
     "test:e2e": "playwright test"

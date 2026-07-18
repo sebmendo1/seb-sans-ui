@@ -5,17 +5,16 @@ export default defineConfig({
   fullyParallel: false,
   timeout: 45_000,
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://127.0.0.1:4173',
     trace: 'retain-on-failure',
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://127.0.0.1:5173/api/health',
-    reuseExistingServer: true,
+    command: 'npm run build && vite preview --host 127.0.0.1 --port 4173',
+    url: 'http://127.0.0.1:4173/survey',
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    env: { RECOMMENDATION_MINIMUM: '1' },
   },
 })

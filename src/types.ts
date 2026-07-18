@@ -105,3 +105,19 @@ export interface Submission {
   }
   events: TuningEvent[]
 }
+
+export interface SubmissionExport {
+  completionCode: string
+  submittedAt: string
+  experimentVersion: string
+  viewport: { width: number; height: number }
+  browserFamily: string
+  startedAt: string
+  durationSeconds: number
+  state: SurveyState
+  tuningEvents: TuningEvent[]
+  displayDefaults: FontConfig
+  bodyDefaults: FontConfig
+  displaySample: string
+  bodySample: string
+}

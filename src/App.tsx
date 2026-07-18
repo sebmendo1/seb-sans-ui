@@ -1,7 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { SurveyPage } from './survey/SurveyPage'
-import { StudioPage } from './studio/StudioPage'
 
 const DashboardPage = lazy(() => import('./dashboard/DashboardPage'))
 
@@ -10,7 +9,6 @@ export function App() {
     <Routes>
       <Route path="/" element={<Navigate to="/survey" replace />} />
       <Route path="/survey" element={<SurveyPage />} />
-      <Route path="/studio" element={<StudioPage />} />
       <Route
         path="/dashboard"
         element={

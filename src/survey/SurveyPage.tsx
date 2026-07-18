@@ -1,176 +1,88 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ACTIVE_EXPERIMENT } from '../config/experiment'
 import { FontTuner } from '../components/FontTuner'
 import { Rating } from '../components/Rating'
-import { ApiError, api } from '../lib/api'
-import type {
-  ControlName,
-  Experiment,
-  FontConfig,
-  Role,
-  SessionCredentials,
-  SurveyState,
-  TuningEvent,
-} from '../types'
+import {
+  appendStoredSubmission,
+  browserFamily,
+  buildSubmissionExport,
+  clearSavedSession,
+  createCompletionCode,
+  downloadSubmissionExport,
+  initialSurveyState,
+  loadSavedSession,
+  saveSession,
+  type SavedSurveySession,
+} from '../lib/surveyStorage'
+import type { ControlName, FontConfig, Role, SurveyState, TuningEvent } from '../types'
 
-const STORAGE_KEY = 'seb-sans-survey-session-v1'
 const TOTAL_STEPS = 5
 
-function initialState(experiment: Experiment): SurveyState {
-  return {
-    display: { ...experiment.displayDefaults },
-    body: { ...experiment.bodyDefaults },
-    display_text: experiment.displaySample,
-    body_text: experiment.bodySample,
-    display_rating: 4,
-    body_rating: 4,
-    likes: '',
-    dislikes: '',
-    overall_rating: 4,
-    feelings: '',
-  }
-}
-
-function parseCredentials(): SessionCredentials | null {
-  try {
-    const value = localStorage.getItem(STORAGE_KEY)
-    return value ? (JSON.parse(value) as SessionCredentials) : null
-  } catch {
-    localStorage.removeItem(STORAGE_KEY)
-    return null
-  }
-}
-
-function browserFamily() {
-  const agent = navigator.userAgent
-  if (agent.includes('Firefox')) return 'Firefox'
-  if (agent.includes('Edg')) return 'Edge'
-  if (agent.includes('Chrome')) return 'Chrome'
-  if (agent.includes('Safari')) return 'Safari'
-  return 'Other'
-}
-
 export function SurveyPage() {
-  const [experiment, setExperiment] = useState<Experiment | null>(null)
-  const [credentials, setCredentials] = useState<SessionCredentials | null>(null)
+  const experiment = ACTIVE_EXPERIMENT
   const [state, setState] = useState<SurveyState | null>(null)
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [completionCode, setCompletionCode] = useState('')
-  const [saving, setSaving] = useState(false)
-  const revisionRef = useRef(0)
+  const [sessionActive, setSessionActive] = useState(false)
   const eventsRef = useRef<TuningEvent[]>([])
-  const startedAtRef = useRef(Date.now())
+  const startedAtRef = useRef(new Date().toISOString())
+  const viewportRef = useRef({ width: window.innerWidth, height: window.innerHeight })
+  const browserRef = useRef(browserFamily())
   const saveTimerRef = useRef<number | null>(null)
-  const saveChainRef = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
-    let active = true
-    async function initialize() {
-      const saved = parseCredentials()
-      try {
-        if (saved) {
-          const restored = await api.getSession(saved)
-          if (!active) return
-          setCredentials(saved)
-          setExperiment(restored.experiment)
-          revisionRef.current = restored.revision
-          setStep(restored.currentStep)
-          setState(
-            Object.keys(restored.state).length
-              ? (restored.state as SurveyState)
-              : initialState(restored.experiment),
-          )
-          if (restored.completed && restored.completionCode) {
-            setCompletionCode(restored.completionCode)
-          }
-        } else {
-          const config = await api.getConfig()
-          if (active) setExperiment(config)
-        }
-      } catch {
-        localStorage.removeItem(STORAGE_KEY)
-        try {
-          const config = await api.getConfig()
-          if (active) setExperiment(config)
-        } catch (requestError) {
-          if (active) {
-            setError(
-              requestError instanceof ApiError
-                ? requestError.message
-                : 'Could not load the survey.',
-            )
-          }
-        }
-      } finally {
-        if (active) setLoading(false)
-      }
+    const saved = loadSavedSession()
+    if (saved) {
+      setState(saved.state)
+      setStep(saved.step)
+      eventsRef.current = saved.events
+      startedAtRef.current = saved.startedAt
+      viewportRef.current = saved.viewport
+      browserRef.current = saved.browserFamily
+      setSessionActive(true)
     }
-    void initialize()
-    return () => {
-      active = false
-    }
+    setLoading(false)
   }, [])
 
   useEffect(() => {
-    if (!credentials || !state || completionCode || step === 1) return
+    if (!sessionActive || !state || completionCode || step === 1) return
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     saveTimerRef.current = window.setTimeout(() => {
-      const events = eventsRef.current.splice(0)
-      saveChainRef.current = saveChainRef.current.then(async () => {
-        setSaving(true)
-        try {
-          const response = await api.saveDraft(credentials, {
-            revision: revisionRef.current,
-            current_step: step,
-            state,
-            events,
-          })
-          revisionRef.current = response.revision
-          setError('')
-        } catch (requestError) {
-          eventsRef.current.unshift(...events)
-          setError(
-            requestError instanceof ApiError
-              ? requestError.message
-              : 'Could not save your progress.',
-          )
-        } finally {
-          setSaving(false)
-        }
-      })
-    }, 650)
+      const payload: SavedSurveySession = {
+        step,
+        state,
+        events: eventsRef.current,
+        startedAt: startedAtRef.current,
+        viewport: viewportRef.current,
+        browserFamily: browserRef.current,
+      }
+      saveSession(payload)
+    }, 1000)
     return () => {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     }
-  }, [credentials, state, step, completionCode])
+  }, [sessionActive, state, step, completionCode])
 
-  async function start() {
-    setLoading(true)
+  function start() {
     setError('')
-    try {
-      const response = await api.createSession({
-        viewport: { width: window.innerWidth, height: window.innerHeight },
-        browser_family: browserFamily(),
-        variable_font_supported: CSS.supports('font-variation-settings', '"wght" 400'),
-      })
-      const nextCredentials = {
-        sessionId: response.sessionId,
-        sessionToken: response.sessionToken,
-      }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextCredentials))
-      setCredentials(nextCredentials)
-      setExperiment(response.experiment)
-      setState(initialState(response.experiment))
-      revisionRef.current = response.revision
-      startedAtRef.current = Date.now()
-      setStep(2)
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not start the survey.')
-    } finally {
-      setLoading(false)
-    }
+    setState(initialSurveyState(experiment))
+    startedAtRef.current = new Date().toISOString()
+    viewportRef.current = { width: window.innerWidth, height: window.innerHeight }
+    browserRef.current = browserFamily()
+    eventsRef.current = []
+    setSessionActive(true)
+    setStep(2)
+    saveSession({
+      step: 2,
+      state: initialSurveyState(experiment),
+      events: [],
+      startedAt: startedAtRef.current,
+      viewport: viewportRef.current,
+      browserFamily: browserRef.current,
+    })
   }
 
   function changeConfig(role: Role, config: FontConfig, control: ControlName, value: number) {
@@ -179,44 +91,45 @@ export function SurveyPage() {
       role,
       control,
       value,
-      elapsed_ms: Date.now() - startedAtRef.current,
+      elapsed_ms: Date.now() - Date.parse(startedAtRef.current),
     })
   }
 
   function resetConfig(role: Role, defaults: FontConfig) {
     setState((current) => (current ? { ...current, [role]: defaults } : current))
-    const elapsed_ms = Date.now() - startedAtRef.current
+    const elapsed_ms = Date.now() - Date.parse(startedAtRef.current)
     for (const control of ['weight', 'opsz', 'tracking', 'leading', 'xheight'] as ControlName[]) {
       eventsRef.current.push({ role, control, value: defaults[control], elapsed_ms })
     }
   }
 
-  async function submit() {
-    if (!credentials || !state) return
+  function submit() {
+    if (!state) return
     if (!state.likes.trim() || !state.dislikes.trim()) {
       setError('Please share what works and what you would change before submitting.')
       return
     }
-    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current)
     setLoading(true)
     setError('')
-    try {
-      await saveChainRef.current
-      const response = await api.submit(credentials, {
-        revision: revisionRef.current,
-        state,
-        events: eventsRef.current.splice(0),
-      })
-      setCompletionCode(response.completionCode)
-      localStorage.removeItem(STORAGE_KEY)
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Could not submit your response.')
-    } finally {
-      setLoading(false)
+    const session: SavedSurveySession = {
+      step: 5,
+      state,
+      events: eventsRef.current,
+      startedAt: startedAtRef.current,
+      viewport: viewportRef.current,
+      browserFamily: browserRef.current,
     }
+    const code = createCompletionCode()
+    const payload = buildSubmissionExport(session, code, experiment)
+    appendStoredSubmission(payload)
+    downloadSubmissionExport(payload)
+    clearSavedSession()
+    setCompletionCode(code)
+    setSessionActive(false)
+    setLoading(false)
   }
 
-  if (loading && !experiment) {
+  if (loading && !state && !completionCode) {
     return <main className="centered-page">Loading the test…</main>
   }
 
@@ -227,16 +140,16 @@ export function SurveyPage() {
         <h1>Thank you for shaping Seb Sans.</h1>
         <p>Your anonymous completion code is</p>
         <strong className="completion-code">{completionCode}</strong>
-        <p className="muted">Your response has been saved. You can close this page.</p>
+        <p className="muted">
+          A JSON file with your response was downloaded. Share that file with the researcher if asked.
+        </p>
       </main>
     )
   }
 
   return (
     <main className="survey-page">
-      {experiment ? (
-        <style>{`@font-face{font-family:"Seb Sans Survey";src:url("${experiment.font.url}") format("woff2");font-weight:100 900;font-display:swap}`}</style>
-      ) : null}
+      <style>{`@font-face{font-family:"Seb Sans Survey";src:url("${experiment.font.url}") format("woff2");font-weight:100 900;font-display:swap}`}</style>
       <header className="survey-header">
         <Link to="/survey" className="wordmark">Seb Sans</Link>
         <div className="progress-wrap">
@@ -252,7 +165,7 @@ export function SurveyPage() {
             <i style={{ width: `${(step / TOTAL_STEPS) * 100}%` }} />
           </div>
         </div>
-        <span className="save-state" aria-live="polite">{saving ? 'Saving…' : credentials ? 'Saved locally' : ''}</span>
+        <span className="save-state" aria-live="polite">{sessionActive ? 'Saved locally' : ''}</span>
       </header>
 
       <section className="survey-stage">
@@ -266,16 +179,16 @@ export function SurveyPage() {
             </p>
             <div className="privacy-note">
               <strong>Anonymous by design.</strong>
-              <span>We record your settings and written feedback, not your name, email, or IP address.</span>
+              <span>We record your settings and written feedback in a local file, not your name, email, or IP address.</span>
             </div>
-            <button className="primary-button" type="button" onClick={() => void start()} disabled={loading}>
-              {loading ? 'Starting…' : 'Start the test'} <span aria-hidden="true">→</span>
+            <button className="primary-button" type="button" onClick={start}>
+              Start the test <span aria-hidden="true">→</span>
             </button>
             <Link className="admin-link" to="/dashboard">Research dashboard</Link>
           </div>
         ) : null}
 
-        {step === 2 && state && experiment ? (
+        {step === 2 && state ? (
           <div className="step-content wide">
             <p className="eyebrow">01 — Display text</p>
             <h1>Make the headline feel clear.</h1>
@@ -295,7 +208,7 @@ export function SurveyPage() {
           </div>
         ) : null}
 
-        {step === 3 && state && experiment ? (
+        {step === 3 && state ? (
           <div className="step-content wide">
             <p className="eyebrow">02 — Body text</p>
             <h1>Settle into a reading rhythm.</h1>
@@ -371,7 +284,7 @@ export function SurveyPage() {
               Continue <span aria-hidden="true">→</span>
             </button>
           ) : (
-            <button className="primary-button" type="button" onClick={() => void submit()} disabled={loading}>
+            <button className="primary-button" type="button" onClick={submit} disabled={loading}>
               {loading ? 'Submitting…' : 'Submit feedback'} <span aria-hidden="true">✓</span>
             </button>
           )}

@@ -1,12 +1,15 @@
 node_modules/
 dist/
 .venv/
+.env
 .env.local
 data/*.sqlite3
 data/*.sqlite3-*
 data/backups/
+data/submissions/
 __pycache__/
 .pytest_cache/
 *.pyc
 playwright-report/
 test-results/
+.vercel
